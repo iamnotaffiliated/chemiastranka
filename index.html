@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arcade Online: Chemistry & Math</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        :root {
+            --p-green: #b2f2bb; --p-blue: #a5d8ff; --p-pink: #ffc9c9;
+            --p-yellow: #fff9db; --glass: rgba(255, 255, 255, 0.12);
+        }
+        body {
+            margin: 0; font-family: 'Courier New', monospace;
+            background: #071106; height: 100vh; display: flex; 
+            justify-content: center; align-items: center; color: white;
+            transition: background 0.5s; overflow: hidden;
+        }
+        .container {
+            background: var(--glass); backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 2rem; border-radius: 20px; width: 90%; max-width: 500px; text-align: center;
+        }
+        .hidden { display: none !important; }
+        .btn {
+            padding: 10px 20px; margin: 5px; border: none; border-radius: 8px;
+            cursor: pointer; font-weight: bold; font-family: inherit; transition: 0.2s;
+        }
+        .btn-main { background: var(--p-green); color: #111; width: 100%; font-size: 1.2rem; margin-top: 10px; }
+        #timer-bar { height: 8px; background: var(--p-pink); width: 100%; margin-bottom: 15px; border-radius: 4px; transition: width 0.1s linear; }
+        input[type="text"] {
+            background: black; color: white; border: 2px solid white;
+            padding: 10px; font-size: 1.5rem; text-align: center; width: 80%; outline: none;
+        }
+        .leaderboard { background: rgba(0,0,0,0.4); padding: 10px; border-radius: 10px; text-align: left; font-size: 0.8rem; margin: 10px 0; }
+        .lb-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding: 2px 0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="screen-menu">
+        <h2 style="color: var(--p-green);">ARCADE ONLINE</h2>
+        <button class="btn btn-main" onclick="switchGame('chem')">CHÉMIA</button>
+        <button class="btn btn-main" style="background: var(--p-blue);" onclick="switchGame('math')">MATEMATIKA</button>
+        
+        <h3 style="margin-top:20px; font-size: 0.9rem;">GLOBÁLNY LEADERBOARD</h3>
+        <div id="global-lb" class="leaderboard">Načítavam...</div>
+    </div>
+
+    <div id="screen-game" class="hidden">
+        <div id="timer-bar"></div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+            <div id="lives-disp">❤️ ❤️ ❤️</div>
+            <div id="score-disp">000</div>
+        </div>
+        <h1 id="target-display">---</h1>
+        <input type="text" id="game-input" autocomplete="off">
+        <div id="game-msg" style="margin-top: 15px; min-height: 25px;"></div>
+    </div>
+
+    <div id="screen-input" class="hidden">
+        <h2 style="color: var(--p-yellow);">NOVÝ REKORD!</h2>
+        <input type="text" id="name-input" maxlength="5" placeholder="MENO">
+        <button class="btn btn-main" onclick="uploadScore()">ULOŽIŤ DO CLOUDU</button>
+    </div>
+</div>
+
+<script>
+    // --- 1. KONFIGURÁCIA FIREBASE ---
+    // Tu vlož svoje údaje z Firebase Console -> Project Settings
+    const firebaseConfig = {
+        apiKey: "TVOJ_API_KEY",
+        authDomain: "TVOJ_PROJECT.firebaseapp.com",
+        projectId: "TVOJ_PROJECT_ID",
+        storageBucket: "TVOJ_PROJECT.appspot.com",
+        messagingSenderId: "ID",
+        appId: "APP_ID"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // --- 2. LOGIKA HRY ---
+    const chemData = [{n:"Vodík",s:"H"},{n:"Kyslík",s:"O"},{n:"Uhlík",s:"C"},{n:"Dusík",s:"N"},{n:"Železo",s:"Fe"},{n:"Zlato",s:"Au"},{n:"Striebro",s:"Ag"}];
+    let state = { score: 0, lives: 3, game: 'chem', timeLeft: 10, interval: null };
+
+    async function loadLeaderboard() {
+        const lbDiv = document.getElementById('global-lb');
+        try {
+            const snapshot = await db.collection('leaderboard_' + state.game)
+                .orderBy('score', 'desc').limit(5).get();
+            let html = "";
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                html += `<div class="lb-row"><span>${data.name}</span><span>${data.score}</span></div>`;
+            });
+            lbDiv.innerHTML = html || "Zatiaľ žiadne rekordy.";
+        } catch(e) { lbDiv.innerHTML = "Offline režim."; }
+    }
+
+    function switchGame(g) {
+        state.game = g;
+        document.getElementById('screen-menu').classList.add('hidden');
+        document.getElementById('screen-game').classList.remove('hidden');
+        state.score = 0; state.lives = 3;
+        nextQuestion();
+    }
+
+    function nextQuestion() {
+        clearInterval(state.interval);
+        const input = document.getElementById('game-input');
+        input.value = ""; input.focus();
+        
+        if(state.game === 'chem') {
+            const el = chemData[Math.floor(Math.random()*chemData.length)];
+            state.ans = el.s.toLowerCase();
+            document.getElementById('target-display').innerText = el.n;
+        } else {
+            const a = Math.floor(Math.random()*20), b = Math.floor(Math.random()*20);
+            state.ans = (a + b).toString();
+            document.getElementById('target-display').innerText = `${a} + ${b}`;
+        }
+        
+        state.timeLeft = 10;
+        startTimer();
+    }
+
+    function startTimer() {
+        state.interval = setInterval(() => {
+            state.timeLeft -= 0.1;
+            document.getElementById('timer-bar').style.width = (state.timeLeft/10*100) + "%";
+            if(state.timeLeft <= 0) handleWrong();
+        }, 100);
+    }
+
+    document.getElementById('game-input').addEventListener('keypress', e => {
+        if(e.key === 'Enter') {
+            if(document.getElementById('game-input').value.trim().toLowerCase() === state.ans) {
+                state.score++;
+                document.getElementById('score-disp').innerText = state.score;
+                nextQuestion();
+            } else handleWrong();
+        }
+    });
+
+    function handleWrong() {
+        clearInterval(state.interval);
+        state.lives--;
+        document.getElementById('lives-disp').innerText = "❤️ ".repeat(state.lives);
+        if(state.lives <= 0) {
+            document.getElementById('screen-game').classList.add('hidden');
+            document.getElementById('screen-input').classList.remove('hidden');
+        } else nextQuestion();
+    }
+
+    async function uploadScore() {
+        const name = document.getElementById('name-input').value.toUpperCase() || "ANON";
+        await db.collection('leaderboard_' + state.game).add({
+            name: name,
+            score: state.score,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        location.reload();
+    }
+
+    loadLeaderboard();
+</script>
+</body>
+</html>
